@@ -31,14 +31,29 @@ def chunk_text(text, chunk_size=512, overlap=50):
 
 # Function to generate embeddings and store in FAISS
 def create_faiss_index(documents):
-    vectors = [embedding_model.encode(chunk) for doc in documents for chunk in chunk_text(load_text(doc))]
+    all_chunks = []
+    vectors = []
+
+    for doc in documents:
+        text = load_text(doc)
+        chunks = chunk_text(text)
+        all_chunks.extend(chunks)
+        vectors.extend(embedding_model.encode(chunks))
+
     vectors = np.array(vectors, dtype=np.float32)
 
+    # Save FAISS index
     index = faiss.IndexFlatL2(vectors.shape[1])
     index.add(vectors)
-
     faiss.write_index(index, "embeddings/faiss_index")
-    print("FAISS index saved.")
+
+    # Save chunk mapping
+    with open("embeddings/chunk_map.txt", "w", encoding="utf-8") as f:
+        for chunk in all_chunks:
+            f.write(chunk + "\n")
+
+    print("FAISS index and chunk map saved.")
+
 
 if __name__ == "__main__":
     files = [os.path.join("data", f) for f in os.listdir("data") if f.endswith((".pdf", ".txt", ".docx"))]

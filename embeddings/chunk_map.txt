@@ -1,0 +1,100 @@
+Md Muzammil Shaikh 
+Shaikhmuza99@gmail.com | +917709359139 | Ulhasnagar, Maharashtra.  
+ linkedin.com/md-muzammil-shaikh/   
+ 
+ 
+Skills 
+  
+Languages: Python, JavaScript, SQL   
+Web Frameworks: Django, Flask 
+Technologies & Tools: RASA, Redis, JWT, PostgreSQL, MySQL MongoDB, PgBouncer, CI/CD, Docker, NGINX, Celery, REST 
+Architecture, Microservices, Distributed Systems, AWS, EC2, ECS, S3, RDS, ElastiCache 
+Certification: Full stack with Python (Fynd Academy) 
+ 
+Work Experience 
+  
+Route Mobile Ltd, Mumbai   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+         
+        
+Jul 2023 - Present Software Developer  
+• Spearheaded the development of an application for a no-code Chatbot Creation platform on AWS ECS, resulting in a 50% 
+reduction in development time for AI-based Chatbots.  
+• Created NLP and AI-based chatbots using Amazon Lex and Rasa, which contributed to a 30% improvement in customer 
+interaction and satisfaction rates.  
+• Introduced an asynchronous workflow into the existing architecture, resulting in a substantial 60% increase in throughput 
+using Celery, directly impacting operational efficiency and scalability.  
+• Led team efforts on various projects, ensuring timely delivery of features and achieving a 10% improvement in overall project 
+completion rates. 
+• Optimized application performance by implementing caching solutions, DB connection pooling, reducing server response time 
+by 40%. 
+• Utilized expertise in a wide range of technologies, including AWS services (EC2, S3, ECS), Python, Django, Flask, Redis, 
+JWT, Celery, PostgreSQL, Docker, NGINX, and Rasa, to drive innovation and efficiency.  
+Infosys, Mumbai    
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+       
+Nov 2021 - Jul 2023 Senior System Associate   
+• Authored automation scripts for the team, slashing operation time by 70% and driving a remarkable 98% increase in team 
+productivity.  
+• Implemented Python scripting, resulting in a 50% reduction in process time, directly contributing to a 30% increase in overall 
+operational efficiency.  
+• Developed and Integrated APIs into existing web applications, improving functionality and increasing user engagement by 
+20%. 
+• Collaborated with cross-functional teams on design, coding, and debugging, reducing development cycles by 15% through 
+efficient teamwork and communication.
+• Developed and Integrated APIs into existing web applications, improving functionality and increasing user engagement by 
+20%. 
+• Collaborated with cross-functional teams on design, coding, and debugging, reducing development cycles by 15% through 
+efficient teamwork and communication. 
+• Resolved over 95% of reported bugs from internal and external customers within SLA timelines, enhancing system reliability 
+and user satisfaction. 
+ 
+Education  
+  
+B.Sc. in Information Technology 
+  
+  
+  
+  
+  
+   
+  
+   
+Jun 2018 - May 2021   
+University of Mumbai, CGPA: 8.6/10  
+  
+  
+  
+  
+  
+  
+  
+  
+ 
+Project Work  
+  
+• Roubot-2023: Created a AI based chatbot creation platform using Django, AWS Fargate, S3, Celery, Docker, DocumentDB, 
+Elasticache and Flutter. Introduced an asynchronous workflow for creating high throughput. Leveraged the use of AWS 
+Fargate and ECS for ensuring high availability of the application. Used AWS RDS for storing structured data.  
+• Bill Sending application: Developed a Flask application that retrieves data from an MSSQL database and generates bills 
+by mapping values to an HTML template using Jinja2. The generated HTML binary files are converted to PDFs and sent to 
+respective WhatsApp numbers. Utilized Meta APIs and multithreading to generate hundreds of bills per minute. Implemented 
+a cron job to automate the process, ensuring the application runs every minute as a SaaS solution. 
+
