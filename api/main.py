@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Depends, Query, HTTPException, BackgroundTasks
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -6,22 +6,62 @@ from llama_cpp import Llama
 import os
 import time
 import tiktoken
+from sqlalchemy import create_engine, Column, String, Text, select, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
+import uuid
+from typing import List
+from pydantic import BaseModel
+from sqlalchemy.sql import func  # Import func
+# import threading
+from datetime import datetime
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")  # Define IST timezone
+
 
 app = FastAPI()
 
-# Load FAISS index and embedding model
-embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-index = None  # Placeholder for FAISS index
+# Database Configuration
+DATABASE_URL = "sqlite:///./conversation.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
 
-# Load Llama Model with limited context window
+# Define ConversationHistory Model
+class ConversationHistory(Base):
+    __tablename__ = "conversation_history"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    vendor_name = Column(String(100), nullable=False)
+    user_type = Column(String(50), nullable=False)
+    message = Column(Text, nullable=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(IST))  # Store time in IST
+
+
+
+Base.metadata.create_all(bind=engine)
+
+# Dependency for DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Load FAISS index & embedding model
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+index = None
+
+# Load Llama Model
 llm = Llama(
-    model_path="models/mistral-7b-instruct-v0.1.Q4_K_M.gguf", 
-    n_ctx=2048, 
-    n_threads=4,  # Adjust based on your CPU cores
+    model_path="models/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+    n_ctx=2048,
+    n_threads=4,
     n_batch=128
 )
 
-# Load tokenizer for token truncation
+# Tokenizer for truncation
 enc = tiktoken.get_encoding("cl100k_base")
 
 def truncate_text(text, max_tokens=400):
@@ -31,106 +71,155 @@ def truncate_text(text, max_tokens=400):
 
 # Load stored document chunks
 def load_chunks():
-    with open("embeddings/chunk_map.txt", "r", encoding="utf-8") as f:
-        return {i: line.strip() for i, line in enumerate(f.readlines())}  # Convert to dict
+    try:
+        with open("embeddings/chunk_map.txt", "r", encoding="utf-8") as f:
+            return {i: line.strip() for i, line in enumerate(f.readlines())}
+    except FileNotFoundError:
+        return {}
 
 chunk_dict = load_chunks()
 
+# Rebuild FAISS index
 def rebuild_faiss():
-    global index, chunk_dict  # Ensure global update
-
-    # Load document chunks again
+    global index, chunk_dict
     chunk_dict = load_chunks()
 
-    # Generate embeddings for chunks
+    if not chunk_dict:
+        print("No chunks found.")
+        return
+
     chunk_texts = list(chunk_dict.values())
     chunk_embeddings = embedding_model.encode(chunk_texts).astype(np.float32)
 
-    # Build FAISS index
     faiss_index = faiss.IndexFlatL2(chunk_embeddings.shape[1])
     faiss_index.add(chunk_embeddings)
-
-    # Save updated index
     faiss.write_index(faiss_index, "embeddings/faiss_index")
 
-    # Reload FAISS index
     index = faiss.read_index("embeddings/faiss_index")
     print("FAISS index reloaded.")
 
-
-
+# Search FAISS
 def search_faiss(query, top_k=10):
+    if index is None:
+        return "No relevant information found."
+
     query_vector = embedding_model.encode(query).astype(np.float32)
     distances, indices = index.search(np.array([query_vector]), top_k)
 
-    # **Retrieve valid indices**
     valid_indices = [i for i in indices[0] if 0 <= i < len(chunk_dict)]
-
-    # **Fetch retrieved chunks**
     retrieved_texts = [chunk_dict[i].strip() for i in valid_indices]
+    print("Final Retrieved Context:\n", "\n\n".join(retrieved_texts))
 
-    # **Debugging Info**
-    print("Retrieved indices:", indices[0])
-    print("Valid Retrieved Indices:", valid_indices)
-    print("Final Retrieved Context:\n", "\n\n".join(retrieved_texts[:5]))
 
     return "\n\n".join(retrieved_texts) if retrieved_texts else "No relevant information found."
 
-
+# API Models
+class QueryRequest(BaseModel):
+    vendor_name: str
+    user_type: str
+    query: str
 
 @app.get("/")
 def home():
     return {"message": "Welcome to the RAG Chatbot API"}
 
 @app.post("/query/")
-async def query_llm(query: str):
+async def query_llm(request: QueryRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     rebuild_faiss()  # Ensure FAISS is updated
 
+    vendor_name = request.vendor_name
+    user_type = request.user_type
+    query = request.query
+
+    # Save user query immediately
+    conversation = ConversationHistory(vendor_name=vendor_name, user_type=user_type, message=query)
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
+    # Run LLM processing in the background
+    background_tasks.add_task(process_llm_response, vendor_name, query, db)
+
+    return {"message": "Processing your query, please wait..."}
+
+def process_llm_response(vendor_name: str, query: str, db: Session):
+    """Handles LLM processing and stores response in DB."""
     context = search_faiss(query)
 
     if context == "No relevant information found.":
-        return {"answer": "I don't have enough information to answer this."}
+        bot_response = "I don't have enough information to answer this."
+    else:
+        prompt = f"""
+        You are a highly intelligent AI assistant. Use the provided context to answer concisely.
+        
+        ### Context:
+        {context}
 
-    prompt = f"""
-            You are a highly intelligent AI assistant. Your goal is to provide clear, concise, and meaningful answers using the given context.
+        ### Question:
+        {query}
 
-            ### Context:
-            {context}
+        ### Answer:
+        """
 
-            ### Question:
-            {query}
+        start_time = time.time()
+        response = llm(prompt, max_tokens=128)
+        end_time = time.time()
 
-            ### Instructions:
-            - Use the provided context to answer the question accurately.
-            - If the context is insufficient, say, "I don't have enough information to answer this."
-            - Keep the response **concise, relevant, and well-structured**.
-            - Avoid unnecessary repetition or incomplete sentences.
+        print("Llama Processing Time:", end_time - start_time)
+        bot_response = response["choices"][0]["text"].strip()
 
-            ### Answer:
-            """
-
-    start_time = time.time()
-    response = llm(prompt, max_tokens=128,  stream=True)
-
-    full_response = ""
-    for chunk in response:
-        full_response += chunk["choices"][0]["text"]
-        print(full_response)
-    end_time = time.time()
-
-    print("Llama Processing Time:", end_time - start_time)
-    # print({"answer": response["choices"][0]["text"].strip()})
-    # return {"answer": response["choices"][0]["text"].strip()}
-    print("response time:",end_time-start_time)
-    return {"answer":full_response}
-
+    # Store bot response in DB
+    chatbot_conversation = ConversationHistory(vendor_name=vendor_name, user_type="chatbot", message=bot_response)
+    db.add(chatbot_conversation)
+    db.commit()
+    db.refresh(chatbot_conversation)
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile):
     file_location = f"data/{file.filename}"
+    os.makedirs("data", exist_ok=True)
     with open(file_location, "wb") as f:
         f.write(await file.read())
 
-    rebuild_faiss()  # Ensure FAISS is updated
+    rebuild_faiss()
     return {"message": f"File '{file.filename}' uploaded successfully."}
 
+@app.get("/conversation-history/")
+async def get_conversation_history(
+    vendor_name: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    # Get total message count for the vendor
+    total_messages = db.execute(
+        select(func.count()).where(ConversationHistory.vendor_name == vendor_name)
+    ).scalar() or 0  
+
+    total_pages = max(1, -(-total_messages // page_size))  # Calculate total pages (ceil division)
+
+    if page > total_pages:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    # Fetch the last 'page_size' messages, then order them in ascending order
+    results = (
+        db.execute(
+            select(ConversationHistory)
+            .where(ConversationHistory.vendor_name == vendor_name)
+            .order_by(ConversationHistory.timestamp.desc())  # Newest messages first
+            .offset((page - 1) * page_size)  # Correct offset for pagination
+            .limit(page_size)
+        )
+        .scalars()
+        .all()
+    )
+
+    # Reverse the results to show in ascending order
+    results.reverse()
+
+    return {
+        "page": page,
+        "total_pages": total_pages,
+        "total_messages": total_messages,
+        "messages": results,
+    }
