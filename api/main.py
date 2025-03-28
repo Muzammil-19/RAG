@@ -22,6 +22,16 @@ IST = pytz.timezone("Asia/Kolkata")  # Define IST timezone
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Replace with frontend URL for security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Database Configuration
 DATABASE_URL = "sqlite:///./conversation.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -146,20 +156,49 @@ def process_llm_response(vendor_name: str, query: str, db: Session):
     """Handles LLM processing and stores response in DB."""
     context = search_faiss(query)
 
+    # Fetch the last 5 messages from conversation history
+    recent_messages = db.execute(
+        select(ConversationHistory)
+        .where(ConversationHistory.vendor_name == vendor_name)
+        .order_by(ConversationHistory.timestamp.desc())  # Get latest messages first
+        .limit(5)
+    ).scalars().all()
+
+    # Format previous messages as context
+    chat_history = "\n".join([f"{msg.user_type}: {msg.message}" for msg in reversed(recent_messages)])
+
     if context == "No relevant information found.":
         bot_response = "I don't have enough information to answer this."
     else:
         prompt = f"""
-        You are a highly intelligent AI assistant. Use the provided context to answer concisely.
-        
-        ### Context:
-        {context}
+            You are **Smarty**, a highly intelligent and conversational AI assistant. Your task is to provide **concise, accurate, and helpful responses** based on the provided context. 
 
-        ### Question:
-        {query}
+            ### Rules:
+            1. **Introduce yourself as "Smarty"** if asked your name.
+            2. **Never ask for information already present in the context.**
+            3. **If job start and end dates are available, automatically calculate the duration.**
+            4. **If the answer is derivable from the context, provide it confidently—never say "I don't have enough details."**
+            5. **Use recent conversation history to improve responses and maintain context.**
+            6. **For greetings (e.g., "hi", "hello"), respond naturally instead of retrieving factual information.**
+            7. **Avoid repetitive answers; respond naturally based on previous messages.**
+            8. **If context is irrelevant to the query, provide a general helpful response.**
+            9. **don't use based on the context or context gives, type of things, answer like a human in a conversation**
 
-        ### Answer:
-        """
+            ---
+
+            ### **Recent Conversation History:**
+            {chat_history}
+
+            ### **Context:**
+            {context}
+
+            ### **User's Query:**
+            {query}
+
+            ### **Smarty's Answer:**
+            """
+
+
 
         start_time = time.time()
         response = llm(prompt, max_tokens=128)
@@ -167,6 +206,7 @@ def process_llm_response(vendor_name: str, query: str, db: Session):
 
         print("Llama Processing Time:", end_time - start_time)
         bot_response = response["choices"][0]["text"].strip()
+        print("response:", bot_response)
 
     # Store bot response in DB
     chatbot_conversation = ConversationHistory(vendor_name=vendor_name, user_type="chatbot", message=bot_response)
@@ -184,7 +224,7 @@ async def upload_file(file: UploadFile):
     rebuild_faiss()
     return {"message": f"File '{file.filename}' uploaded successfully."}
 
-@app.get("/conversation-history/")
+@app.get("/conversation-history/",include_in_schema=False)
 async def get_conversation_history(
     vendor_name: str,
     page: int = Query(1, ge=1),
